@@ -1,9 +1,13 @@
 name: Sample Action
 description: Sample an action from a hardcoded uniform policy logits using a categorical distribution.
+inputs: []
 outputs:
-  - {name: action_index, type: Integer}
-  - {name: log_prob, type: Float}
-  - {name: logits_out, type: String}
+  - name: action_index
+    type: Integer
+  - name: log_prob
+    type: Float
+  - name: logits_out
+    type: String
 implementation:
   container:
     image: python:3.9
@@ -12,35 +16,32 @@ implementation:
       - -c
       - |
         pip install torch --quiet
-        exec "$0" "$@"
-      - python3
-      - -u
-      - -c
-      - |
+        python3 -u -c "
         import argparse, torch, json
 
         parser = argparse.ArgumentParser()
+        parser.add_argument('--action_index', type=str, required=True)
+        parser.add_argument('--log_prob', type=str, required=True)
+        parser.add_argument('--logits_out', type=str, required=True)
         args = parser.parse_args()
 
-        # Hardcoded logits (e.g., 3 actions, all zeros)
         logits = torch.tensor([0.0, 0.0, 0.0], dtype=torch.float32)
-
         probs = torch.softmax(logits, dim=0)
         dist = torch.distributions.Categorical(probs)
         action_idx = dist.sample().item()
         log_prob = dist.log_prob(torch.tensor(action_idx)).item()
 
-        # Save outputs
         with open(args.action_index, 'w') as f:
             f.write(str(action_idx))
         with open(args.log_prob, 'w') as f:
             f.write(str(log_prob))
         with open(args.logits_out, 'w') as f:
             f.write(json.dumps(logits.tolist()))
-args:
-  - --action_index
-  - {outputPath: action_index}
-  - --log_prob
-  - {outputPath: log_prob}
-  - --logits_out
-  - {outputPath: logits_out}
+        "
+    args:
+      - --action_index
+      - {outputPath: action_index}
+      - --log_prob
+      - {outputPath: log_prob}
+      - --logits_out
+      - {outputPath: logits_out}
