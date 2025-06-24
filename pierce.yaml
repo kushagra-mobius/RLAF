@@ -33,7 +33,6 @@ implementation:
         # Write outputs
         with open(args.reward, 'w') as f:
             f.write(str(reward))
-        "
     args:
       - --action_index
       - {inputPath: action_index}

@@ -42,7 +42,6 @@ implementation:
             f.write(str(log_prob))
         with open(args.logits_out, 'w') as f:
             f.write(json.dumps(logits.tolist()))
-        "
     args:
       - --action_index
       - {outputPath: action_index}

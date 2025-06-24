@@ -70,7 +70,6 @@ implementation:
             f.write(json.dumps(updated_logits.tolist()))
         with open(args.action_probabilities, 'w') as f:
             f.write(json.dumps(probabilities))
-        "
     args:
       - --action_index
       - {inputPath: action_index}
