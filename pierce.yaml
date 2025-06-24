@@ -30,6 +30,8 @@ implementation:
             f.write(str(reward))
         "
     args:
+      - --action_index
+      - {inputPath: action_index}
       - --reward
       - {outputPath: reward}
 
