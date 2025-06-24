@@ -1,0 +1,81 @@
+name: Update Policy
+description: Updates the policy using REINFORCE and outputs updated logits and action probabilities.
+inputs:
+  - name: action_index
+    type: Integer
+  - name: log_prob
+    type: Float
+  - name: reward
+    type: Float
+  - name: logits_out
+    type: String
+outputs:
+  - name: updated_logits
+    type: String
+  - name: action_probabilities
+    type: String
+implementation:
+  container:
+    image: python:3.9
+    command:
+      - sh
+      - -c
+      - |
+        pip install torch --quiet
+        python3 -u -c "
+        import argparse, torch, json
+
+        parser = argparse.ArgumentParser()
+        parser.add_argument('--action_index', type=str, required=True)
+        parser.add_argument('--log_prob', type=str, required=True)
+        parser.add_argument('--reward', type=str, required=True)
+        parser.add_argument('--logits_out', type=str, required=True)
+        parser.add_argument('--updated_logits', type=str, required=True)
+        parser.add_argument('--action_probabilities', type=str, required=True)
+        args = parser.parse_args()
+
+        # Read inputs
+        with open(args.action_index, 'r') as f:
+            action_idx = int(f.read().strip())
+
+        with open(args.log_prob, 'r') as f:
+            log_prob = float(f.read().strip())
+
+        with open(args.reward, 'r') as f:
+            reward = float(f.read().strip())
+
+        with open(args.logits_out, 'r') as f:
+            logits_list = json.load(f)
+
+        logits = torch.tensor(logits_list, requires_grad=True)
+        log_prob_tensor = torch.tensor(log_prob, requires_grad=True)
+
+        baseline = 0.90
+        loss = -log_prob_tensor * (reward - baseline)
+
+        optimizer = torch.optim.Adam([logits], lr=0.05)
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+        updated_logits = logits.detach()
+        probabilities = torch.softmax(updated_logits, dim=0).tolist()
+
+        with open(args.updated_logits, 'w') as f:
+            f.write(json.dumps(updated_logits.tolist()))
+        with open(args.action_probabilities, 'w') as f:
+            f.write(json.dumps(probabilities))
+        "
+    args:
+      - --action_index
+      - {inputPath: action_index}
+      - --log_prob
+      - {inputPath: log_prob}
+      - --reward
+      - {inputPath: reward}
+      - --logits_out
+      - {inputPath: logits_out}
+      - --updated_logits
+      - {outputPath: updated_logits}
+      - --action_probabilities
+      - {outputPath: action_probabilities}
