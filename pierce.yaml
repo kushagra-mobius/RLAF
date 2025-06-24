@@ -1,0 +1,35 @@
+name: Pierce Config
+description: Simulate piercing reward based on selected action and pass all outputs forward.
+inputs:
+  - name: action_index
+    type: Integer
+outputs:
+  - name: reward
+    type: Float
+implementation:
+  container:
+    image: python:3.9
+    command:
+      - sh
+      - -c
+      - |
+        pip install torch --quiet
+        python3 -u -c "
+        import argparse, json, torch, random
+
+        parser = argparse.ArgumentParser()
+        parser.add_argument('--reward', type=str, required=True)
+        args = parser.parse_args()
+
+        # Simulate a reward based on action_index (like piercing accuracy)
+        base_score = 0.90
+        noise = random.uniform(-0.05, 0.03)
+        reward = round(base_score + noise, 4)
+        # Write outputs
+        with open(args.reward, 'w') as f:
+            f.write(str(reward))
+        "
+    args:
+      - --reward
+      - {outputPath: reward}
+
