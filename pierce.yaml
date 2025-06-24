@@ -1,4 +1,4 @@
-name: Pierce Config
+name: Pierce exec and evaluation
 description: Simulate piercing reward based on selected action and pass all outputs forward.
 inputs:
   - name: action_index

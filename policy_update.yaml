@@ -1,4 +1,4 @@
-name: Update Policy
+name: Reward based policy update
 description: Updates the policy using REINFORCE and outputs updated logits and action probabilities.
 inputs:
   - name: action_index

@@ -1,4 +1,4 @@
-name: Sample Action
+name: RLAF policy,state,actions init
 description: Sample an action from a hardcoded uniform policy logits using a categorical distribution.
 inputs: []
 outputs:
