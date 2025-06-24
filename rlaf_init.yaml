@@ -15,8 +15,13 @@ implementation:
       - sh
       - -c
       - |
-        pip install torch --quiet
-        python3 -u -c "
+        python3 -m pip install --quiet torch numpy || \
+        python3 -m pip install --quiet torch numpy --user
+        exec "$0" "$@"
+      - python3
+      - -u
+      - -c
+      - |
         import argparse, torch, json
 
         parser = argparse.ArgumentParser()
