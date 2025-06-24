@@ -28,7 +28,7 @@ implementation:
       - -u
       - -c
       - |
-        import argparse, torch, json
+        import argparse, torch, json, os
 
         parser = argparse.ArgumentParser()
         parser.add_argument('--action_index', type=str, required=True)
@@ -38,6 +38,10 @@ implementation:
         parser.add_argument('--updated_logits', type=str, required=True)
         parser.add_argument('--action_probabilities', type=str, required=True)
         args = parser.parse_args()
+
+        # Ensure output directories exist
+        os.makedirs(os.path.dirname(args.updated_logits), exist_ok=True)
+        os.makedirs(os.path.dirname(args.action_probabilities), exist_ok=True)
 
         # Read inputs
         with open(args.action_index, 'r') as f:
@@ -52,6 +56,7 @@ implementation:
         with open(args.logits_out, 'r') as f:
             logits_list = json.load(f)
 
+        print(reward)
         logits = torch.tensor(logits_list, requires_grad=True)
         log_prob_tensor = torch.tensor(log_prob, requires_grad=True)
 
@@ -66,10 +71,12 @@ implementation:
         updated_logits = logits.detach()
         probabilities = torch.softmax(updated_logits, dim=0).tolist()
 
+        # Write outputs
         with open(args.updated_logits, 'w') as f:
             f.write(json.dumps(updated_logits.tolist()))
         with open(args.action_probabilities, 'w') as f:
             f.write(json.dumps(probabilities))
+
     args:
       - --action_index
       - {inputPath: action_index}

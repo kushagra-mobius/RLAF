@@ -22,7 +22,7 @@ implementation:
       - -u
       - -c
       - |
-        import argparse, torch, json
+        import argparse, torch, json, os
 
         parser = argparse.ArgumentParser()
         parser.add_argument('--action_index', type=str, required=True)
@@ -30,18 +30,26 @@ implementation:
         parser.add_argument('--logits_out', type=str, required=True)
         args = parser.parse_args()
 
+        # Ensure directories exist
+        os.makedirs(os.path.dirname(args.action_index), exist_ok=True)
+        os.makedirs(os.path.dirname(args.log_prob), exist_ok=True)
+        os.makedirs(os.path.dirname(args.logits_out), exist_ok=True)
+
+        # Your logic
         logits = torch.tensor([0.0, 0.0, 0.0], dtype=torch.float32)
         probs = torch.softmax(logits, dim=0)
         dist = torch.distributions.Categorical(probs)
         action_idx = dist.sample().item()
         log_prob = dist.log_prob(torch.tensor(action_idx)).item()
 
+        # Write to the paths
         with open(args.action_index, 'w') as f:
             f.write(str(action_idx))
         with open(args.log_prob, 'w') as f:
             f.write(str(log_prob))
         with open(args.logits_out, 'w') as f:
             f.write(json.dumps(logits.tolist()))
+
     args:
       - --action_index
       - {outputPath: action_index}

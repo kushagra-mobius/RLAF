@@ -20,19 +20,24 @@ implementation:
       - -u
       - -c
       - |
-        import argparse, json, torch, random
+        import argparse, json, torch, random, os
 
         parser = argparse.ArgumentParser()
         parser.add_argument('--reward', type=str, required=True)
         args = parser.parse_args()
 
+        # Ensure the output directory exists
+        os.makedirs(os.path.dirname(args.reward), exist_ok=True)
+
         # Simulate a reward based on action_index (like piercing accuracy)
         base_score = 0.90
         noise = random.uniform(-0.05, 0.03)
         reward = round(base_score + noise, 4)
-        # Write outputs
+
+        # Write output
         with open(args.reward, 'w') as f:
             f.write(str(reward))
+
     args:
       - --action_index
       - {inputPath: action_index}
