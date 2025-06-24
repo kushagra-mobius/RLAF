@@ -20,9 +20,6 @@ implementation:
         import argparse, torch, json
 
         parser = argparse.ArgumentParser()
-        parser.add_argument('--action_index', type=str, required=True)
-        parser.add_argument('--log_prob', type=str, required=True)
-        parser.add_argument('--logits_out', type=str, required=True)
         args = parser.parse_args()
 
         # Hardcoded logits (e.g., 3 actions, all zeros)
