@@ -18,9 +18,14 @@ implementation:
       - -u
       - -c
       - |
+        import argparse
         import requests
         import os
         import json
+
+        parser = argparse.ArgumentParser()
+        parser.add_argument('--pi_row_data_path', type=str, required=True)
+        args = parser.parse_args()
 
         # --- Configuration (Hardcoded from pi.py) ---
         API_BASE_URL = "https://ig.aidtaas.com"
@@ -92,7 +97,7 @@ implementation:
         )
 
         # Write output to the path provided by Elyra
-        output_path = os.environ['PI_ROW_DATA_PATH']
+        output_path = args.pi_row_data_path
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
         if row_data:
@@ -105,4 +110,5 @@ implementation:
             with open(output_path, 'w') as f:
                 f.write("{}")
     args:
+      - --pi_row_data_path
       - {outputPath: pi_row_data}
