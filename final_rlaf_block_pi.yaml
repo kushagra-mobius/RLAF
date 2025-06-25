@@ -1,5 +1,6 @@
 name: RLAF Combined Policy and Action Selection
 description: Returns top action based on probability and a boolean to pierce or not, considering initial run or policy update.
+operation name: RLAF Combined Policy and Action Selection
 outputs:
   - name: pierce_or_not
     type: Boolean
