@@ -104,7 +104,7 @@ implementation:
             current_data = get_instances(access_token)
             instance = current_data["content"][0]
             instance["rlaf2pierce"].append(new_entry)
-            update_instance(access_token, instance["id"], "/rlaf2pierce", instance["rlaf2pierce"])
+            update_instance(access_token, instance["id"], "rlaf2pierce", instance["rlaf2pierce"])
             print("Appended to rlaf2pierce successfully.")
 
         def update_rlaf_config_scores(access_token, scores_list):
