@@ -1,0 +1,135 @@
+name: RLAF Combined Policy and Action Selection
+description: Returns top 3 actions based on probability and a boolean to pierce or not, considering initial run or policy update.
+inputs:
+  - name: logits_in
+    type: String
+  - name: pierced_rewards
+    type: String
+  - name: baseline_reward
+    type: Float
+outputs:
+  - name: pierce_or_not
+    type: Boolean
+  - name: top_3_actions
+    type: String
+implementation:
+  container:
+    image: python:3.9
+    command:
+      - sh
+      - -c
+      - |
+        python3 -m pip install --quiet torch numpy || \
+        python3 -m pip install --quiet torch numpy --user
+        exec "$0" "$@"
+      - python3
+      - -u
+      - -c
+      - |
+        import argparse, torch, json, os
+        import numpy as np
+
+        parser = argparse.ArgumentParser()
+        parser.add_argument('--logits_in', type=str, required=True)
+        parser.add_argument('--pierced_rewards', type=str, required=True)
+        parser.add_argument('--baseline_reward', type=float, required=True)
+        parser.add_argument('--pierce_or_not', type=str, required=True)
+        parser.add_argument('--top_3_actions', type=str, required=True)
+        args = parser.parse_args()
+
+        # Ensure output directories exist
+        os.makedirs(os.path.dirname(args.pierce_or_not), exist_ok=True)
+        os.makedirs(os.path.dirname(args.top_3_actions), exist_ok=True)
+
+        logits_list = json.loads(args.logits_in)
+        current_logits = torch.tensor(logits_list, dtype=torch.float32, requires_grad=True)
+        # The action space (list of possible actions) is explicitly defined below with 6 actions.
+        # Ensure that the input 'logits_in' array also has 6 elements to match this action space.
+        # The action space (list of possible actions) is explicitly defined below with 6 actions.
+        # Each action is now represented as a JSON object with a 'learning_rate'.
+        action_space = json.dumps([
+            {"learning_rate": 0.001},
+            {"learning_rate": 0.005},
+            {"learning_rate": 0.01},
+            {"learning_rate": 0.05},
+            {"learning_rate": 0.1},
+            {"learning_rate": 0.5}
+        ])
+        action_space_list = json.loads(action_space)
+        
+        pierced_rewards_str = args.pierced_rewards
+        baseline = args.baseline_reward
+        
+        pierce_decision = True # Default to true for initial run or if baseline not met
+        
+        if pierced_rewards_str == "-1":
+            # Initial run: Do not update policy, just get top 3 actions from initial logits
+            pass # current_logits is already set from logits_in
+        else:
+            # Subsequent run: Update policy based on pierced rewards
+            pierced_rewards_dict = json.loads(pierced_rewards_str)
+            
+            # Create a mapping from action name to index
+            action_name_to_idx = {action_data["learning_rate"]: idx for idx, action_data in enumerate(action_space_list)}
+
+            # Check if any of the pierced rewards reached the baseline
+            for action_name_key, reward_val in pierced_rewards_dict.items():
+                if reward_val >= baseline:
+                    pierce_decision = False
+                    break
+            
+            # Policy update logic (REINFORCE)
+            optimizer = torch.optim.Adam([current_logits], lr=0.05)
+
+            for action_name_key, reward_val in pierced_rewards_dict.items():
+                action_idx = action_name_to_idx.get(float(action_name_key)) # Convert key back to float for lookup
+                if action_idx is None:
+                    print(f"Warning: Action name '{action_name_key}' not found in action space. Skipping.")
+                    continue
+                
+                # Calculate log_prob for the specific action from current_logits
+                probs = torch.softmax(current_logits, dim=0)
+                dist = torch.distributions.Categorical(probs)
+                log_prob_tensor = dist.log_prob(torch.tensor(action_idx))
+                
+                loss = -log_prob_tensor * (reward_val - baseline)
+                
+                optimizer.zero_grad() # Clear gradients for this specific update
+                loss.backward()       # Compute gradients
+                optimizer.step()      # Apply update
+                
+                # Detach logits after each step to prevent graph accumulation across loop iterations
+                current_logits = current_logits.detach().requires_grad_(True)
+
+        # Get top 3 actions based on current (or updated) logits
+        probs = torch.softmax(current_logits, dim=0)
+        
+        # Get top 3 actions by probability
+        top_probs, top_indices = torch.topk(probs, k=3)
+        
+        top_actions_list = []
+        for i in range(3):
+            action_idx = top_indices[i].item()
+            action_data = action_space_list[action_idx] if action_idx < len(action_space_list) else {"learning_rate": "unknown"}
+            top_actions_list.append({
+                "learning_rate": action_data["learning_rate"],
+                "probability": round(top_probs[i].item(), 4)
+            })
+
+        # Write outputs
+        with open(args.pierce_or_not, 'w') as f:
+            f.write(str(pierce_decision).lower()) # Write as 'true' or 'false'
+        with open(args.top_3_actions, 'w') as f:
+            f.write(json.dumps(top_actions_list))
+
+    args:
+      - --logits_in
+      - {inputPath: logits_in}
+      - --pierced_rewards
+      - {inputPath: pierced_rewards}
+      - --baseline_reward
+      - {inputPath: baseline_reward}
+      - --pierce_or_not
+      - {outputPath: pierce_or_not}
+      - --top_3_actions
+      - {outputPath: top_3_actions}
