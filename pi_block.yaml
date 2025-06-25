@@ -1,0 +1,109 @@
+name: Get PI Rows
+description: Retrieves all rows from the PI service using hardcoded values.
+inputs: []
+outputs:
+  - name: pi_row_data
+    type: String
+implementation:
+  container:
+    image: python:3.9
+    command:
+      - sh
+      - -c
+      - |
+        python3 -m pip install --quiet requests || \
+        python3 -m pip install --quiet requests --user
+        exec "$0" "$@"
+      - python3
+      - -u
+      - -c
+      - |
+        import requests
+        import os
+        import json
+
+        # --- Configuration (Hardcoded from pi.py) ---
+        API_BASE_URL = "https://ig.aidtaas.com"
+        USERNAME = "aidtaas@gaiansolutions.com"
+        PASSWORD = "Gaian@123"
+        PRODUCT_ID = "c2255be4-ddf6-449e-a1e0-b4f7f9a2b636"
+
+        _BEARER_TOKEN = None
+
+        def _get_or_refresh_token():
+            global _BEARER_TOKEN
+            token_url = f"{API_BASE_URL}/mobius-iam-service/v1.0/login"
+            payload = {"userName": USERNAME, "password": PASSWORD, "productId": PRODUCT_ID, "requestType": "TENANT"}
+            headers = {"content-type": "application/json"}
+            try:
+                response = requests.post(token_url, headers=headers, json=payload)
+                response.raise_for_status()
+                response_data = response.json()
+                token = response_data.get("accessToken") or response_data.get("token")
+                if not token:
+                    raise ValueError("Authentication successful, but could not find a valid token key in the response.")
+                _BEARER_TOKEN = token
+                return True
+            except requests.exceptions.HTTPError as http_err:
+                print(f"HTTP error during authentication: {http_err}")
+            except Exception as err:
+                print(f"An unexpected error occurred during authentication: {err}")
+            return False
+
+        def get_pi_row(schema_id: str, row_id: str, universe_id: str):
+            global _BEARER_TOKEN
+            if not _BEARER_TOKEN:
+                if not _get_or_refresh_token():
+                    return None
+            get_rows_url = f"{API_BASE_URL}/pi-entity-instances-service/v3.0/schemas/{schema_id}/instances/list"
+            headers = {
+                "Authorization": f"Bearer {_BEARER_TOKEN}",
+                "Content-Type": "application/json"
+            }
+            payload = {
+              "dbType": "TIDB",
+              "ownedOnly": True,
+            }
+            try:
+                response = requests.post(get_rows_url, headers=headers, json=payload)
+                if response.status_code == 401:
+                    if _get_or_refresh_token():
+                        headers["Authorization"] = f"Bearer {_BEARER_TOKEN}"
+                        response = requests.post(get_rows_url, headers=headers, json=payload)
+                    else:
+                        return None
+                response.raise_for_status()
+                result_data = response.json()
+                content_list = result_data.get("content", [])
+                return content_list
+            except requests.exceptions.HTTPError as http_err:
+                print(f"HTTP error occurred while fetching row: {http_err}")
+            except Exception as err:
+                print(f"An unexpected error occurred while fetching row: {err}")
+            return None
+
+        # --- Hardcoded Example Usage ---
+        example_schema_id = "685a9dcd08232436a767c98a"
+
+        row_data = get_pi_row(
+            schema_id=example_schema_id,
+            row_id="", # row_id is not used when fetching all rows
+            universe_id="" # universe_id is not used for this GET operation
+        )
+
+        # Write output to the path provided by Elyra
+        output_path = os.environ['PI_ROW_DATA_PATH']
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+        if row_data:
+            print("\n--- Retrieved Row Data (JSON) ---")
+            print(json.dumps(row_data, indent=2))
+            with open(output_path, 'w') as f:
+                json.dump(row_data, f, indent=2)
+        else:
+            print("\n--- Could not retrieve row data. ---")
+            # Write an empty JSON object if no data is retrieved
+            with open(output_path, 'w') as f:
+                f.write("{}")
+    args:
+      - {outputPath: pi_row_data}
