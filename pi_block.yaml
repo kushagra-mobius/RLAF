@@ -96,12 +96,11 @@ implementation:
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
         if row_data:
-            print("\n--- Retrieved Row Data (JSON) ---")
+            import sys
             print(json.dumps(row_data, indent=2))
             with open(output_path, 'w') as f:
                 json.dump(row_data, f, indent=2)
         else:
-            print("\n--- Could not retrieve row data. ---")
             # Write an empty JSON object if no data is retrieved
             with open(output_path, 'w') as f:
                 f.write("{}")
