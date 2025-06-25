@@ -1,14 +1,9 @@
 name: RLAF Combined Policy and Action Selection
-description: Returns top 3 actions based on probability and a boolean to pierce or not, considering initial run or policy update.
-inputs:
-  - name: pierced_rewards
-    type: String
-  - name: baseline_reward
-    type: Float
+description: Returns top action based on probability and a boolean to pierce or not, considering initial run or policy update.
 outputs:
   - name: pierce_or_not
     type: Boolean
-  - name: top_3_actions
+  - name: top_action
     type: String
 implementation:
   container:
@@ -28,15 +23,15 @@ implementation:
         import numpy as np
 
         parser = argparse.ArgumentParser()
-        parser.add_argument('--pierced_rewards', type=str, required=True)
-        parser.add_argument('--baseline_reward', type=float, required=True)
         parser.add_argument('--pierce_or_not', type=str, required=True)
-        parser.add_argument('--top_3_actions', type=str, required=True)
+        parser.add_argument('--top_action', type=str, required=True)
         args = parser.parse_args()
+
+        import time # Added for timestamp generation
 
         # Ensure output directories exist
         os.makedirs(os.path.dirname(args.pierce_or_not), exist_ok=True)
-        os.makedirs(os.path.dirname(args.top_3_actions), exist_ok=True)
+        os.makedirs(os.path.dirname(args.top_action), exist_ok=True)
 
         # Functions to fetch data from the database (from sus2.py)
         def get_access_token():
@@ -72,46 +67,107 @@ implementation:
             response.raise_for_status() # Raise an exception for HTTP errors
             return response.json()
 
+        def update_instance(access_token, instance_id, field_to_update, new_value):
+            update_url = "https://ig.aidtaas.com/pi-entity-instances-service/v2.0/schemas/685a9dcd08232436a767c98a/instances"
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json"
+            }
+            payload = {
+                "dbType": "TIDB",
+                "conditionalFilter": {
+                    "conditions": [
+                        {
+                            "field": "id",
+                            "operator": "EQUAL",
+                            "value": instance_id
+                        }
+                    ]
+                },
+                "partialUpdateRequests": [
+                    {
+                        "patch": [
+                            {
+                                "operation": "REPLACE",
+                                "path": field_to_update,
+                                "value": new_value
+                            }
+                        ]
+                    }
+                ]
+            }
+            response = requests.patch(update_url, headers=headers, json=payload)
+            response.raise_for_status() # Raise an exception for HTTP errors
+            return response.json()
+
+        def append_to_rlaf2pierce(access_token, new_entry):
+            current_data = get_instances(access_token)
+            instance = current_data["content"][0]
+            instance["rlaf2pierce"].append(new_entry)
+            update_instance(access_token, instance["id"], "/rlaf2pierce", instance["rlaf2pierce"])
+            print("Appended to rlaf2pierce successfully.")
+
+        def update_rlaf_config_scores(access_token, scores_list):
+            current_data = get_instances(access_token)
+            instance = current_data["content"][0]
+            instance_id = instance["id"] # Get instance_id from the fetched instance
+
+            rlaf_config = instance.get("rlaf_config", {})
+            actions = rlaf_config.get("actions", [])
+
+            if len(actions) != len(scores_list):
+                print(f"Warning: Length of scores_list ({len(scores_list)}) does not match number of actions ({len(actions)}). Scores will be applied sequentially.")
+
+            for i, score in enumerate(scores_list):
+                if i < len(actions):
+                    actions[i]["score"] = score
+
+            rlaf_config["actions"] = actions
+            instance["rlaf_config"] = rlaf_config
+
+            update_instance(access_token, instance_id, "rlaf_config", instance["rlaf_config"])
+            print("Updated rlaf_config scores successfully.")
+
         # Fetch data
         token = get_access_token()
         db_data = get_instances(token)
         
-        # Extract actions and initial logits from the database data
-        # Assuming the structure is db_data["content"][0]["rlaf_config"]["actions"]
-        # And each action has a 'score' field which is the logit
-        fetched_actions = db_data["content"][0]["rlaf_config"]["actions"]
+        # Extract rlaf_config actions and initial logits from the database data
+        rlaf_config_actions = db_data["content"][0]["rlaf_config"]["actions"]
         
         action_space_list = []
         initial_logits_list = []
-        for action_item in fetched_actions:
-            # Assuming 'lr' is the learning rate and 'score' is the logit
+        for action_item in rlaf_config_actions:
             action_space_list.append(action_item)
             initial_logits_list.append(action_item["score"])
 
         current_logits = torch.tensor(initial_logits_list, dtype=torch.float32, requires_grad=True)
         
-        pierced_rewards_str = args.pierced_rewards
-        baseline = args.baseline_reward
-        
         pierce_decision = True # Default to true for initial run or if baseline not met
-        
-        if pierced_rewards_str == "-1":
-            # Initial run: Do not update policy, just get top 3 actions from initial logits
-            pass # current_logits is already set from logits_in
-        else:
-            # Subsequent run: Update policy based on pierced rewards
-            pierced_rewards_dict = json.loads(pierced_rewards_str)
-            
-            # Create a mapping from action name to index
-            action_name_to_idx = {action_data["learning_rate"]: idx for idx, action_data in enumerate(action_space_list)}
 
+        # Get pierce2rlaf data and find the latest entry
+        pierce2rlaf_data = db_data["content"][0].get("pierce2rlaf", [])
+        
+        latest_pierce2rlaf_entry = None
+        if pierce2rlaf_data:
+            # Sort by timestamp (assuming timestamps are strings that can be sorted lexicographically)
+            sorted_pierce2rlaf = sorted(pierce2rlaf_data, key=lambda x: x.get("timestamp", "0"), reverse=True)
+            latest_pierce2rlaf_entry = sorted_pierce2rlaf[0]
+
+        if latest_pierce2rlaf_entry and latest_pierce2rlaf_entry.get("actions"):
+            # Policy update logic (REINFORCE)
+            pierced_rewards_dict = {str(action["lr"]): action["accuracy"] for action in latest_pierce2rlaf_entry["actions"]}
+            baseline = latest_pierce2rlaf_entry.get("trained_accuracy", 0.0) # Use trained_accuracy as baseline
+
+            # Create a mapping from action learning_rate to index
+            action_name_to_idx = {action_data["learning_rate"]: idx for idx, action_data in enumerate(action_space_list)}
+            
             # Check if any of the pierced rewards reached the baseline
             for action_name_key, reward_val in pierced_rewards_dict.items():
                 if reward_val >= baseline:
                     pierce_decision = False
                     break
-            
-            # Policy update logic (REINFORCE)
+
             optimizer = torch.optim.Adam([current_logits], lr=0.05)
 
             for action_name_key, reward_val in pierced_rewards_dict.items():
@@ -134,76 +190,44 @@ implementation:
                 # Detach logits after each step to prevent graph accumulation across loop iterations
                 current_logits = current_logits.detach().requires_grad_(True)
  
-             # After policy update, update scores in the database
-             # Construct the patch requests for each action's score
-             patch_requests = []
-             updated_logits_list = current_logits.tolist() # Convert tensor to list for JSON serialization
-             for idx, action_item in enumerate(fetched_actions):
-                 # Assuming the path to update score is /rlaf_config/actions/{index}/score
-                 patch_requests.append({
-                     "operation": "REPLACE",
-                     "path": f"/rlaf_config/actions/{idx}/score",
-                     "value": updated_logits_list[idx]
-                 })
-             
-             update_url = "https://ig.aidtaas.com/pi-entity-instances-service/v2.0/schemas/685a9dcd08232436a767c98a/instances"
-             update_headers = {
-                 "Authorization": f"Bearer {token}", # Use the same token fetched earlier
-                 "Content-Type": "application/json"
-             }
-             update_payload = {
-                 "dbType": "TIDB",
-                 "conditionalFilter": {
-                     "conditions": [
-                         {
-                             "field": "id",
-                             "operator": "EQUAL",
-                             "value": "1" # Assuming the ID is always 1
-                         }
-                     ]
-                 },
-                 "partialUpdateRequests": [
-                     {
-                         "patch": patch_requests
-                     }
-                 ]
-             }
-             
-             try:
-                 update_response = requests.patch(update_url, headers=update_headers, json=update_payload)
-                 update_response.raise_for_status()
-                 print(f"Successfully updated scores in DB: {update_response.json()}")
-             except requests.exceptions.RequestException as e:
-                 print(f"Error updating scores in DB: {e}")
- 
-         # Get top 3 actions based on current (or updated) logits
-         probs = torch.softmax(current_logits, dim=0)
+            # After policy update, update scores in the database
+            updated_logits_list = current_logits.tolist() # Convert tensor to list for JSON serialization
+            update_rlaf_config_scores(token, updated_logits_list)
+        else:
+            print("No actions in latest pierce2rlaf entry or no pierce2rlaf data. Skipping policy update.")
+
+        # Get top action based on current (or updated) logits
+        probs = torch.softmax(current_logits, dim=0)
         
-        # Get top 3 actions by probability
-        top_probs, top_indices = torch.topk(probs, k=3)
+        # Get top action by probability
+        top_probs, top_indices = torch.topk(probs, k=1)
         
         top_actions_list = []
-        for i in range(3):
-            action_idx = top_indices[i].item()
-            action_data = action_space_list[action_idx] if action_idx < len(action_space_list) else {"learning_rate": "unknown"}
-            action_with_prob = action_data.copy()
-            if "score" in action_with_prob:
-                del action_with_prob["score"]
-            action_with_prob["probability"] = round(top_probs[i].item(), 4)
-            top_actions_list.append(action_with_prob)
+        action_idx = top_indices[0].item()
+        action_data = action_space_list[action_idx] if action_idx < len(action_space_list) else {"learning_rate": "unknown"}
+        action_with_prob = action_data.copy()
+        if "score" in action_with_prob:
+            del action_with_prob["score"]
+        action_with_prob["probability"] = round(top_probs[0].item(), 4)
+        top_actions_list.append(action_with_prob)
 
-        # Write outputs
+        # Append to rlaf2pierce in DB
+        current_timestamp = str(int(time.time()))
+        new_rlaf2pierce_entry = {
+            "actions": top_actions_list,
+            "pierce_or_not": pierce_decision,
+            "timestamp": current_timestamp
+        }
+        append_to_rlaf2pierce(token, new_rlaf2pierce_entry)
+
+        # Write outputs to files (for block output)
         with open(args.pierce_or_not, 'w') as f:
             f.write(str(pierce_decision).lower()) # Write as 'true' or 'false'
-        with open(args.top_3_actions, 'w') as f:
+        with open(args.top_action, 'w') as f:
             f.write(json.dumps(top_actions_list))
 
     args:
-      - --pierced_rewards
-      - {inputPath: pierced_rewards}
-      - --baseline_reward
-      - {inputPath: baseline_reward}
       - --pierce_or_not
       - {outputPath: pierce_or_not}
-      - --top_3_actions
-      - {outputPath: top_3_actions}
+      - --top_action
+      - {outputPath: top_action}
