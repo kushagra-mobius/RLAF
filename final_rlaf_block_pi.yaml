@@ -218,6 +218,7 @@ implementation:
             "pierce_or_not": pierce_decision,
             "timestamp": current_timestamp
         }
+        print(new_rlaf2pierce_entry)
         append_to_rlaf2pierce(token, new_rlaf2pierce_entry)
 
         # Write outputs to files (for block output)
