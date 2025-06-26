@@ -74,6 +74,7 @@ implementation:
 
         token = get_access_token()
         updates = json.loads(args.updates_list)
+        print(f"Received updates: {updates}")
 
         for update_item in updates:
             instance_id = update_item["instance_id"]

@@ -40,7 +40,7 @@ implementation:
         os.makedirs(os.path.dirname(args.pierce_or_not), exist_ok=True)
         os.makedirs(os.path.dirname(args.top_action), exist_ok=True)
         os.makedirs(os.path.dirname(args.updates_list), exist_ok=True)
-
+        print(args.db_data)
         # Functions to fetch data from the database (from sus2.py)
         def append_to_rlaf2pierce(instance, new_entry):
             instance["rlaf2pierce"].append(new_entry)
