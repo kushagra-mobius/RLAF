@@ -113,7 +113,7 @@ implementation:
         pierce_decision = True # Default to true for initial run or if baseline not met
 
         # Get pierce2rlaf data and find the latest entry
-        pierce2rlaf_data = instance_data.get("pierce2rlaf", []) if instance_data else []
+        pierce2rlaf_data = instance_data.get("pierce2rfal", []) if instance_data else []
         
         latest_pierce2rlaf_entry = None
         if pierce2rlaf_data:
