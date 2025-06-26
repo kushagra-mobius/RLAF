@@ -73,7 +73,13 @@ implementation:
             }
 
         # Inputs
-        db_data = json.loads(args.db_data)
+        with open(args.db_data, 'r') as f:
+            db_data_content = f.read()
+        
+        if not db_data_content:
+            raise ValueError(f"Input file {args.db_data} is empty or contains no data.")
+            
+        db_data = json.loads(db_data_content)
         piercing_results = db_data["content"][0]["pierce2rfal"][-1]
         accuracy = piercing_results['actions'][0].get('accuracy')
         prev_accuracy = piercing_results['actions'][0].get('prev_accuracy')
