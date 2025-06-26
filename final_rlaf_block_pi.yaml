@@ -80,26 +80,40 @@ implementation:
             raise ValueError(f"Input file {args.db_data} is empty or contains no data.")
             
         db_data = json.loads(db_data_content)
-        piercing_results = db_data["content"][0]["pierce2rfal"][-1]
-        accuracy = piercing_results['actions'][0].get('accuracy')
-        prev_accuracy = piercing_results['actions'][0].get('prev_accuracy')
+
+        instance_data = None
+        if db_data and "content" in db_data and len(db_data["content"]) > 0:
+            instance_data = db_data["content"][0]
+        
+        piercing_results = {} # Default to empty dict
+        if instance_data and "pierce2rfal" in instance_data and len(instance_data["pierce2rfal"]) > 0:
+            piercing_results = instance_data["pierce2rfal"][-1]
+        
+        # Initialize accuracy and prev_accuracy safely
+        accuracy = None
+        prev_accuracy = None
+        if piercing_results and piercing_results.get('actions'):
+            if len(piercing_results['actions']) > 0:
+                accuracy = piercing_results['actions'][0].get('accuracy')
+                prev_accuracy = piercing_results['actions'][0].get('prev_accuracy')
+        
         baseline_accuracy = 0.85
         
         # Extract rlaf_config actions and initial logits from the database data
-        rlaf_config_actions = db_data["content"][0]["rlaf_config"]["actions"]
+        rlaf_config_actions = instance_data.get("rlaf_config", {}).get("actions", []) if instance_data else []
         
         action_space_list = []
         initial_logits_list = []
         for action_item in rlaf_config_actions:
             action_space_list.append(action_item)
-            initial_logits_list.append(action_item["score"])
+            initial_logits_list.append(action_item.get("score", 0.0)) # Default score to 0.0 if missing
 
         current_logits = torch.tensor(initial_logits_list, dtype=torch.float32, requires_grad=True)
         
         pierce_decision = True # Default to true for initial run or if baseline not met
 
         # Get pierce2rlaf data and find the latest entry
-        pierce2rlaf_data = db_data["content"][0].get("pierce2rlaf", [])
+        pierce2rlaf_data = instance_data.get("pierce2rlaf", []) if instance_data else []
         
         latest_pierce2rlaf_entry = None
         if pierce2rlaf_data:
@@ -167,7 +181,8 @@ implementation:
         top_actions_list.append(action_with_prob)
 
 
-        if accuracy >= prev_accuracy and accuracy<baseline_accuracy:
+        # Determine pierce_decision based on accuracy values, handling None
+        if accuracy is not None and prev_accuracy is not None and accuracy >= prev_accuracy and accuracy < baseline_accuracy:
             pierce_decision = True
         else:
             pierce_decision = False
@@ -180,7 +195,8 @@ implementation:
             "timestamp": current_timestamp
         }
         print(new_rlaf2pierce_entry)
-        updates_to_apply.append(append_to_rlaf2pierce(db_data["content"][0], new_rlaf2pierce_entry))
+        if instance_data: # Only append if instance_data is not None
+            updates_to_apply.append(append_to_rlaf2pierce(instance_data, new_rlaf2pierce_entry))
 
         # Write outputs to files (for block output)
         with open(args.pierce_or_not, 'w') as f:
