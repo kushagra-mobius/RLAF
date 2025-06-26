@@ -1,9 +1,14 @@
 name: RLAF Combined Policy and Action Selection
 description: Returns top action based on probability and a boolean to pierce or not, considering initial run or policy update.
+inputs:
+  - name: db_data
+    type: String
 outputs:
   - name: pierce_or_not
     type: Boolean
   - name: top_action
+    type: String
+  - name: updates_list
     type: String
 implementation:
   container:
@@ -25,6 +30,8 @@ implementation:
         parser = argparse.ArgumentParser()
         parser.add_argument('--pierce_or_not', type=str, required=True)
         parser.add_argument('--top_action', type=str, required=True)
+        parser.add_argument('--db_data', type=str, required=True)
+        parser.add_argument('--updates_list', type=str, required=True)
         args = parser.parse_args()
 
         import time # Added for timestamp generation
@@ -32,85 +39,19 @@ implementation:
         # Ensure output directories exist
         os.makedirs(os.path.dirname(args.pierce_or_not), exist_ok=True)
         os.makedirs(os.path.dirname(args.top_action), exist_ok=True)
+        os.makedirs(os.path.dirname(args.updates_list), exist_ok=True)
 
         # Functions to fetch data from the database (from sus2.py)
-        def get_access_token():
-            login_url = "https://ig.aidtaas.com/mobius-iam-service/v1.0/login"
-            headers = {
-                "content-type": "application/json",
-                "mask": "false"
-            }
-            payload = {
-                "userName": "aidtaas@gaiansolutions.com",
-                "password": "Gaian@123",
-                "productId": "c2255be4-ddf6-449e-a1e0-b4f7f9a2b636",
-                "requestType": "TENANT"
-            }
-            response = requests.post(login_url, headers=headers, json=payload)
-            response.raise_for_status() # Raise an exception for HTTP errors
-            return response.json()["accessToken"]
-
-        def get_instances(access_token):
-            instances_url = "https://ig.aidtaas.com/pi-entity-instances-service/v3.0/schemas/685a9dcd08232436a767c98a/instances/list"
-            headers = {
-                "Authorization": f"Bearer {access_token}",
-                "Content-Type": "application/json"
-            }
-            payload = {
-                "dbType": "TIDB",
-                "ownedOnly": True,
-                "filter": {
-                    "id": "1"
-                }
-            }
-            response = requests.post(instances_url, headers=headers, json=payload)
-            response.raise_for_status() # Raise an exception for HTTP errors
-            return response.json()
-
-        def update_instance(access_token, instance_id, field_to_update, new_value):
-            update_url = "https://ig.aidtaas.com/pi-entity-instances-service/v2.0/schemas/685a9dcd08232436a767c98a/instances"
-            headers = {
-                "Authorization": f"Bearer {access_token}",
-                "Content-Type": "application/json"
-            }
-            payload = {
-                "dbType": "TIDB",
-                "conditionalFilter": {
-                    "conditions": [
-                        {
-                            "field": "id",
-                            "operator": "EQUAL",
-                            "value": instance_id
-                        }
-                    ]
-                },
-                "partialUpdateRequests": [
-                    {
-                        "patch": [
-                            {
-                                "operation": "REPLACE",
-                                "path": field_to_update,
-                                "value": new_value
-                            }
-                        ]
-                    }
-                ]
-            }
-            response = requests.patch(update_url, headers=headers, json=payload)
-            response.raise_for_status() # Raise an exception for HTTP errors
-            return response.json()
-
-        def append_to_rlaf2pierce(access_token, new_entry):
-            current_data = get_instances(access_token)
-            instance = current_data["content"][0]
+        def append_to_rlaf2pierce(instance, new_entry):
             instance["rlaf2pierce"].append(new_entry)
-            update_instance(access_token, instance["id"], "rlaf2pierce", instance["rlaf2pierce"])
-            print("Appended to rlaf2pierce successfully.")
+            return {
+                "instance_id": instance["id"],
+                "field_to_update": "rlaf2pierce",
+                "new_value": instance["rlaf2pierce"]
+            }
 
-        def update_rlaf_config_scores(access_token, scores_list):
-            current_data = get_instances(access_token)
-            instance = current_data["content"][0]
-            instance_id = instance["id"] # Get instance_id from the fetched instance
+        def update_rlaf_config_scores(instance, scores_list):
+            instance_id = instance["id"]
 
             rlaf_config = instance.get("rlaf_config", {})
             actions = rlaf_config.get("actions", [])
@@ -125,12 +66,18 @@ implementation:
             rlaf_config["actions"] = actions
             instance["rlaf_config"] = rlaf_config
 
-            update_instance(access_token, instance_id, "rlaf_config", instance["rlaf_config"])
-            print("Updated rlaf_config scores successfully.")
+            return {
+                "instance_id": instance_id,
+                "field_to_update": "rlaf_config",
+                "new_value": instance["rlaf_config"]
+            }
 
-        # Fetch data
-        token = get_access_token()
-        db_data = get_instances(token)
+        # Inputs
+        db_data = json.loads(args.db_data)
+        piercing_results = db_data["content"][0]["pierce2rfal"][-1]
+        accuracy = piercing_results['actions'][0].get('accuracy')
+        prev_accuracy = piercing_results['actions'][0].get('prev_accuracy')
+        baseline_accuracy = 0.85
         
         # Extract rlaf_config actions and initial logits from the database data
         rlaf_config_actions = db_data["content"][0]["rlaf_config"]["actions"]
@@ -153,6 +100,8 @@ implementation:
             # Sort by timestamp (assuming timestamps are strings that can be sorted lexicographically)
             sorted_pierce2rlaf = sorted(pierce2rlaf_data, key=lambda x: x.get("timestamp", "0"), reverse=True)
             latest_pierce2rlaf_entry = sorted_pierce2rlaf[0]
+
+        updates_to_apply = []
 
         if latest_pierce2rlaf_entry and latest_pierce2rlaf_entry.get("actions"):
             # Policy update logic (REINFORCE)
@@ -192,7 +141,7 @@ implementation:
  
             # After policy update, update scores in the database
             updated_logits_list = current_logits.tolist() # Convert tensor to list for JSON serialization
-            update_rlaf_config_scores(token, updated_logits_list)
+            updates_to_apply.append(update_rlaf_config_scores(db_data["content"][0], updated_logits_list))
         else:
             print("No actions in latest pierce2rlaf entry or no pierce2rlaf data. Skipping policy update.")
 
@@ -211,6 +160,12 @@ implementation:
         action_with_prob["probability"] = round(top_probs[0].item(), 4)
         top_actions_list.append(action_with_prob)
 
+
+        if accuracy >= prev_accuracy and accuracy<baseline_accuracy:
+            pierce_decision = True
+        else:
+            pierce_decision = False
+            
         # Append to rlaf2pierce in DB
         current_timestamp = str(int(time.time()))
         new_rlaf2pierce_entry = {
@@ -219,16 +174,22 @@ implementation:
             "timestamp": current_timestamp
         }
         print(new_rlaf2pierce_entry)
-        append_to_rlaf2pierce(token, new_rlaf2pierce_entry)
+        updates_to_apply.append(append_to_rlaf2pierce(db_data["content"][0], new_rlaf2pierce_entry))
 
         # Write outputs to files (for block output)
         with open(args.pierce_or_not, 'w') as f:
             f.write(str(pierce_decision).lower()) # Write as 'true' or 'false'
         with open(args.top_action, 'w') as f:
             f.write(json.dumps(top_actions_list))
+        with open(args.updates_list, 'w') as f:
+            f.write(json.dumps(updates_to_apply))
 
     args:
       - --pierce_or_not
       - {outputPath: pierce_or_not}
       - --top_action
       - {outputPath: top_action}
+      - --db_data
+      - {inputPath: db_data}
+      - --updates_list
+      - {outputPath: updates_list}
