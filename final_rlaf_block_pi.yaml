@@ -125,25 +125,41 @@ implementation:
 
         if latest_pierce2rlaf_entry and latest_pierce2rlaf_entry.get("actions"):
             # Policy update logic (REINFORCE)
-            pierced_rewards_dict = {str(action["lr"]): action["accuracy"] for action in latest_pierce2rlaf_entry["actions"]}
             baseline = latest_pierce2rlaf_entry.get("trained_accuracy", 0.0) # Use trained_accuracy as baseline
 
-            # Create a mapping from action learning_rate to index
-            action_name_to_idx = {action_data["learning_rate"]: idx for idx, action_data in enumerate(action_space_list)}
+            # Create a mapping from action key (tuple of identifying parameters) to index
+            action_to_idx = {}
+            for idx, action_data in enumerate(action_space_list):
+                # Assuming b1, b2, epochs, lr uniquely identify an action
+                action_key = (action_data.get("b1"), action_data.get("b2"), action_data.get("epochs"), action_data.get("lr"))
+                action_to_idx[action_key] = idx
             
-            # Check if any of the pierced rewards reached the baseline
-            for action_name_key, reward_val in pierced_rewards_dict.items():
-                if reward_val >= baseline:
+            # Check if any of the pierced actions' accuracies reached the baseline
+            for action in latest_pierce2rlaf_entry["actions"]:
+                if action.get("accuracy", 0.0) >= baseline:
                     pierce_decision = False
                     break
 
             optimizer = torch.optim.Adam([current_logits], lr=0.05)
-
-            for action_name_key, reward_val in pierced_rewards_dict.items():
-                action_idx = action_name_to_idx.get(float(action_name_key)) # Convert key back to float for lookup
+            
+            # Collect losses for all actions in the current update
+            losses = []
+            for pierced_action_data in latest_pierce2rlaf_entry["actions"]:
+                # Reconstruct the key for the pierced action
+                pierced_action_key = (
+                    pierced_action_data.get("b1"),
+                    pierced_action_data.get("b2"),
+                    pierced_action_data.get("epochs"),
+                    pierced_action_data.get("lr")
+                )
+                
+                action_idx = action_to_idx.get(pierced_action_key)
+                
                 if action_idx is None:
-                    print(f"Warning: Action name '{action_name_key}' not found in action space. Skipping.")
+                    print(f"Warning: Pierced action '{pierced_action_key}' not found in action space. Skipping.")
                     continue
+                
+                reward_val = pierced_action_data["accuracy"]
                 
                 # Calculate log_prob for the specific action from current_logits
                 probs = torch.softmax(current_logits, dim=0)
@@ -151,13 +167,14 @@ implementation:
                 log_prob_tensor = dist.log_prob(torch.tensor(action_idx))
                 
                 loss = -log_prob_tensor * (reward_val - baseline)
+                losses.append(loss)
+            
+            if losses: # Only perform update if there are losses to backpropagate
+                total_loss = torch.stack(losses).sum() # Sum all individual losses
                 
                 optimizer.zero_grad() # Clear gradients for this specific update
-                loss.backward()       # Compute gradients
+                total_loss.backward() # Compute gradients for the total loss
                 optimizer.step()      # Apply update
-                
-                # Detach logits after each step to prevent graph accumulation across loop iterations
-                current_logits = current_logits.detach().requires_grad_(True)
  
             # After policy update, update scores in the database
             updated_logits_list = current_logits.tolist() # Convert tensor to list for JSON serialization
