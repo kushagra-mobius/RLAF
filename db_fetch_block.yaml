@@ -61,6 +61,6 @@ implementation:
 
         with open(args.db_data_json, 'w') as f:
             f.write(json.dumps(db_data))
-  args:
+    args:
       - --db_data_json
       - {outputPath: db_data_json}
