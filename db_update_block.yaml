@@ -73,7 +73,14 @@ implementation:
             return response.json()
 
         token = get_access_token()
-        updates = json.loads(args.updates_list)
+        
+        with open(args.updates_list, 'r') as f:
+            updates_list_content = f.read()
+        
+        if not updates_list_content:
+            raise ValueError(f"Input file {args.updates_list} is empty or contains no data.")
+            
+        updates = json.loads(updates_list_content)
         print(f"Received updates: {updates}")
 
         for update_item in updates:
