@@ -1,4 +1,4 @@
-name: Database Update Block
+name: Push To Pi
 description: Updates specified fields in database instances.
 inputs:
   - name: updates_list

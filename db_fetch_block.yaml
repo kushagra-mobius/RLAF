@@ -1,4 +1,4 @@
-name: Database Fetch Block
+name: Get from Pi
 description: Fetches database instance data and outputs it as a JSON string.
 outputs:
   - name: db_data_json

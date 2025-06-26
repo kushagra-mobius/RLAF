@@ -97,7 +97,7 @@ implementation:
                 accuracy = piercing_results['actions'][0].get('accuracy')
                 prev_accuracy = piercing_results['actions'][0].get('prev_accuracy')
         
-        baseline_accuracy = 0.85
+        baseline_accuracy = instance_data.get("baseline_score", 0.85) # Default to 0.85 if not found
         
         # Extract rlaf_config actions and initial logits from the database data
         rlaf_config_actions = instance_data.get("rlaf_config", {}).get("actions", []) if instance_data else []
