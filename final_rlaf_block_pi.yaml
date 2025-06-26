@@ -115,12 +115,15 @@ implementation:
         # Get pierce2rlaf data and find the latest entry
         pierce2rlaf_data = instance_data.get("pierce2rfal", []) if instance_data else []
         
+        print(f"pierce2rlaf_data: {pierce2rlaf_data}")
         latest_pierce2rlaf_entry = None
+        print(f"latest_pierce2rlaf_entry before if: {latest_pierce2rlaf_entry}")
         if pierce2rlaf_data:
             # Sort by timestamp (assuming timestamps are strings that can be sorted lexicographically)
             sorted_pierce2rlaf = sorted(pierce2rlaf_data, key=lambda x: x.get("timestamp", "0"), reverse=True)
             latest_pierce2rlaf_entry = sorted_pierce2rlaf[0]
 
+        print(f"latest_pierce2rlaf_entry after if: {latest_pierce2rlaf_entry}")
         updates_to_apply = []
 
         if latest_pierce2rlaf_entry and latest_pierce2rlaf_entry.get("actions"):
