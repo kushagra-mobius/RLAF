@@ -21,7 +21,8 @@ implementation:
       - -u
       - -c
       - |
-        import argparse, requests, os
+        import argparse, os
+        import urllib.request
 
         parser = argparse.ArgumentParser()
         parser.add_argument('--request_url', type=str, required=True)
@@ -29,11 +30,16 @@ implementation:
         args = parser.parse_args()
 
         def get_yaml(url):
-            response = requests.get(url)
-            response.raise_for_status()
-            return response.text
+            try:
+                with urllib.request.urlopen(url) as response:
+                    if not (200 <= response.status < 300):
+                        raise Exception(f"Request failed with status {response.status}, body: {response.read().decode('utf-8', errors='ignore')}")
+                    return response.read().decode('utf-8')
+            except Exception as e:
+                print(f"Failed to fetch YAML from {url}: {e}")
+                raise
 
-        print(args.request_url)
+        print(f"Fetching YAML from URL: {args.request_url}")
         yaml_content = get_yaml(args.request_url)
         os.makedirs(os.path.dirname(args.yaml_file_content), exist_ok=True)
         with open(args.yaml_file_content, 'w') as f:
