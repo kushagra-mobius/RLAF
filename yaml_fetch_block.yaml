@@ -33,8 +33,8 @@ implementation:
             response.raise_for_status()
             return response.text
 
+        print(args.request_url)
         yaml_content = get_yaml(args.request_url)
-
         os.makedirs(os.path.dirname(args.yaml_file_content), exist_ok=True)
         with open(args.yaml_file_content, 'w') as f:
             f.write(yaml_content)
