@@ -1,0 +1,46 @@
+name: Get YAML from URL
+description: Fetches a YAML file from a URL and outputs its content.
+inputs:
+  - name: request_url
+    type: String
+    description: URL to fetch the YAML file from.
+outputs:
+  - name: yaml_file_content
+    type: String
+implementation:
+  container:
+    image: python:3.9
+    command:
+      - sh
+      - -c
+      - |
+        python3 -m pip install --quiet requests || \
+        python3 -m pip install --quiet requests --user
+        exec "$0" "$@"
+      - python3
+      - -u
+      - -c
+      - |
+        import argparse, requests, os
+
+        parser = argparse.ArgumentParser()
+        parser.add_argument('--request_url', type=str, required=True)
+        parser.add_argument('--yaml_file_content', type=str, required=True)
+        args = parser.parse_args()
+
+        def get_yaml(url):
+            response = requests.get(url)
+            response.raise_for_status()
+            return response.text
+
+        yaml_content = get_yaml(args.request_url)
+
+        os.makedirs(os.path.dirname(args.yaml_file_content), exist_ok=True)
+        with open(args.yaml_file_content, 'w') as f:
+            f.write(yaml_content)
+        print(f"YAML content fetched from {args.request_url} and written to {args.yaml_file_content}")
+    args:
+      - --request_url
+      - {inputValue: request_url}
+      - --yaml_file_content
+      - {outputPath: yaml_file_content}
